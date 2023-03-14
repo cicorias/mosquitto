@@ -31,7 +31,7 @@ Contributors:
  *
  * For simplicity of this example, all clients with id starting with "jailed"
  * will be jailed. All other clients will work as normal.
- * 
+ *
  * Two jailed clients cannot interact with each other. Normal clients can interact
  * with any jailed client by publishing or subscribing to the mounted topic.
  *
@@ -63,26 +63,27 @@ Contributors:
 
 MOSQUITTO_PLUGIN_DECLARE_VERSION(5);
 
-static mosquitto_plugin_id_t *mosq_pid = NULL;
+static mosquitto_plugin_id_t* mosq_pid = NULL;
 
 // #pragma GCC push_options
 // #pragma GCC optimize("O0")
-static bool is_jailed(const char *str)
+static bool is_jailed(const char* str)
 {
 	return !(strncmp("admin", str, 5) == 0);
 }
 
-static int callback_acl_check(int event, void *event_data, void *userdata)
+static int callback_acl_check(int event, void* event_data, void* userdata)
 {
-	struct mosquitto_evt_acl_check *ed = event_data;
+	struct mosquitto_evt_acl_check* ed = event_data;
 
 	UNUSED(event);
 	UNUSED(userdata);
 
-	const char *clientid = mosquitto_client_id(ed->client);
+	const char* clientid = mosquitto_client_id(ed->client);
 
-	if(!is_jailed(clientid)){
-		/* will only modify the topic of jailed clients */
+	if (!is_jailed(clientid))
+	{
+	/* will only modify the topic of jailed clients */
 		return MOSQ_ERR_SUCCESS;
 	}
 
@@ -93,73 +94,100 @@ static int callback_acl_check(int event, void *event_data, void *userdata)
 	size_t getLen = strlen(getTopic) - 1;
 	size_t subLen = strlen(subTopic) - 1;
 
-	char *new_topic;
+	char* new_topic;
 	size_t new_topic_len;
 
 	// NOTE: during subscribe its the raw topic
-	if(ed->access == MOSQ_ACL_SUBSCRIBE){
-		if(strncmp(ed->topic, subTopic, subLen) == 0){
-			return MOSQ_ERR_SUCCESS;
-		}
-	}
+	switch (ed->access) {
+		case MOSQ_ACL_SUBSCRIBE:
+			if (strncmp(ed->topic, subTopic, subLen) == 0)
+				return MOSQ_ERR_SUCCESS;
+			
+			break;
 
-	// NOTE: during a inbond message with the prefix - it has the prefix
-	// NOTE: this is the subscribe topic
-	if(ed->access == MOSQ_ACL_READ){
-		// TODO: check size_t 
-		int z,y,x;
-		z = strlen(clientid);
-		y = SLASH_Z;
-		x = subLen;
-		new_topic_len = strlen(clientid) + SLASH_Z + subLen + 1;
-		new_topic = mosquitto_calloc(1, new_topic_len);
-		if(!new_topic){
-			return MOSQ_ERR_NOMEM;
-		}
-		snprintf(new_topic, new_topic_len, "%s/%s", clientid, subTopic);
-		
-		if(strncmp(ed->topic, new_topic, new_topic_len - 1) == 0){
-			return MOSQ_ERR_SUCCESS;
-		}
-	}
+		case MOSQ_ACL_READ:
+			new_topic_len = strlen(clientid) + SLASH_Z + subLen + 1;
+			new_topic = mosquitto_calloc(1, new_topic_len);
+			if (!new_topic)
+				return MOSQ_ERR_NOMEM;
 
-	if(ed->access == MOSQ_ACL_WRITE){
-		if(strncmp(ed->topic, putTopic, putLen) == 0){
-			return MOSQ_ERR_SUCCESS;
-		}
+			snprintf(new_topic, new_topic_len, "%s/%s", clientid, subTopic);
 
-		if(strncmp(ed->topic, getTopic, getLen) == 0){
-			return MOSQ_ERR_SUCCESS;
-		}
+			if (strncmp(ed->topic, new_topic, new_topic_len - 1) == 0)
+				return MOSQ_ERR_SUCCESS;
+			
+			break;
+
+		case MOSQ_ACL_WRITE:
+			if (strncmp(ed->topic, putTopic, putLen) == 0)
+				return MOSQ_ERR_SUCCESS;
+
+			if (strncmp(ed->topic, getTopic, getLen) == 0)
+				return MOSQ_ERR_SUCCESS;
+
+			break;
+
+		default:
+			break;
 	}
 
 	return MOSQ_ERR_ACL_DENIED;
+
+	// if(ed->access == MOSQ_ACL_SUBSCRIBE){
+	// 	if(strncmp(ed->topic, subTopic, subLen) == 0){
+	// 		return MOSQ_ERR_SUCCESS;
+	// 	}
+	// }
+	// // NOTE: during a inbond message with the prefix - it has the prefix
+	// // NOTE: this is the subscribe topic
+	// if(ed->access == MOSQ_ACL_READ){
+	// 	new_topic_len = strlen(clientid) + SLASH_Z + subLen + 1;
+	// 	new_topic = mosquitto_calloc(1, new_topic_len);
+	// 	if(!new_topic){
+	// 		return MOSQ_ERR_NOMEM;
+	// 	}
+	// 	snprintf(new_topic, new_topic_len, "%s/%s", clientid, subTopic);
+
+	// 	if(strncmp(ed->topic, new_topic, new_topic_len - 1) == 0){
+	// 		return MOSQ_ERR_SUCCESS;
+	// 	}
+	// }
+
+	// if(ed->access == MOSQ_ACL_WRITE){
+	// 	if(strncmp(ed->topic, putTopic, putLen) == 0){
+	// 		return MOSQ_ERR_SUCCESS;
+	// 	}
+
+	// 	if(strncmp(ed->topic, getTopic, getLen) == 0){
+	// 		return MOSQ_ERR_SUCCESS;
+	// 	}
+	// }
+
+	// return MOSQ_ERR_ACL_DENIED;
 }
 
-
-
-static int callback_message_in(int event, void *event_data, void *userdata)
+static int callback_message_in(int event, void* event_data, void* userdata)
 {
-	struct mosquitto_evt_message *ed = event_data;
-	char *new_topic;
+	struct mosquitto_evt_message* ed = event_data;
+	char* new_topic;
 	size_t new_topic_len;
 
 	UNUSED(event);
 	UNUSED(userdata);
 
-	const char *clientid = mosquitto_client_id(ed->client);
-	mosquitto_log_printf(MOSQ_LOG_ERR, "entering message_in.");
-		new_topic_len = strlen(clientid) + sizeof('/') + strlen(ed->topic) + 1;
+	const char* clientid = mosquitto_client_id(ed->client);
+	new_topic_len = strlen(clientid) + SLASH_Z + strlen(ed->topic) + 1;
 
 	/* Allocate some memory - use
 	 * mosquitto_calloc/mosquitto_malloc/mosquitto_strdup when allocating, to
 	 * allow the broker to track memory usage */
 	new_topic = mosquitto_calloc(1, new_topic_len);
-	if(new_topic == NULL){
+	if (new_topic == NULL)
+	{
 		return MOSQ_ERR_NOMEM;
 	}
 
-	/* prepend the clientid to the topic */
+/* prepend the clientid to the topic */
 	snprintf(new_topic, new_topic_len, "%s/%s", clientid, ed->topic);
 
 	/* Assign the new topic to the event data structure. You
@@ -170,80 +198,86 @@ static int callback_message_in(int event, void *event_data, void *userdata)
 	return MOSQ_ERR_SUCCESS;
 }
 
-static int callback_message_out(int event, void *event_data, void *userdata)
+static int callback_message_out(int event, void* event_data, void* userdata)
 {
-	struct mosquitto_evt_message *ed = event_data;
+	struct mosquitto_evt_message* ed = event_data;
 	size_t clientid_len;
 
 	UNUSED(event);
 	UNUSED(userdata);
 
-	const char *clientid = mosquitto_client_id(ed->client);
+	const char* clientid = mosquitto_client_id(ed->client);
 
-	if(!is_jailed(clientid)){
-		/* will only modify the topic of jailed clients */
+	if (!is_jailed(clientid))
+	{
+	/* will only modify the topic of jailed clients */
 		return MOSQ_ERR_SUCCESS;
 	}
 
-	/* remove the clientid from the front of the topic */
+/* remove the clientid from the front of the topic */
 	clientid_len = strlen(clientid);
 
-	if(strlen(ed->topic) <= clientid_len + 1){
-		/* the topic is not long enough to contain the
-		 * clientid + '/' */
+	if (strlen(ed->topic) <= clientid_len + 1)
+	{
+	/* the topic is not long enough to contain the
+	 * clientid + '/' */
 		return MOSQ_ERR_SUCCESS;
 	}
 
-	if(!strncmp(clientid, ed->topic, clientid_len) && ed->topic[clientid_len] == '/'){
-		/* Allocate some memory - use
-		 * mosquitto_calloc/mosquitto_malloc/mosquitto_strdup when allocating, to
-		 * allow the broker to track memory usage */
+	if (!strncmp(clientid, ed->topic, clientid_len) && ed->topic[clientid_len] == '/')
+	{
+	/* Allocate some memory - use
+	 * mosquitto_calloc/mosquitto_malloc/mosquitto_strdup when allocating, to
+	 * allow the broker to track memory usage */
 
-		/* skip the clientid + '/' */
-		char *new_topic = mosquitto_strdup(ed->topic + clientid_len + 1);
+	 /* skip the clientid + '/' */
+		char* new_topic = mosquitto_strdup(ed->topic + clientid_len + 1);
 
-		if(new_topic == NULL){
+		if (new_topic == NULL)
+		{
 			return MOSQ_ERR_NOMEM;
 		}
 
-		/* Assign the new topic to the event data structure. You
-		 * must *not* free the original topic, it will be handled by the
-		 * broker. */
+	/* Assign the new topic to the event data structure. You
+	 * must *not* free the original topic, it will be handled by the
+	 * broker. */
 		ed->topic = new_topic;
 	}
 
 	return MOSQ_ERR_SUCCESS;
 }
 
-static int callback_subscribe(int event, void *event_data, void *userdata)
+static int callback_subscribe(int event, void* event_data, void* userdata)
 {
-	struct mosquitto_evt_subscribe *ed = event_data;
-	char *new_sub;
+	struct mosquitto_evt_subscribe* ed = event_data;
+	char* new_sub;
 	size_t new_sub_len;
 
 	UNUSED(event);
 	UNUSED(userdata);
 
-	const char *clientid = mosquitto_client_id(ed->client);
+	const char* clientid = mosquitto_client_id(ed->client);
 
-	if(!is_jailed(clientid)){
-		/* will only modify the topic of jailed clients */
+	if (!is_jailed(clientid))
+	{
+	/* will only modify the topic of jailed clients */
 		return MOSQ_ERR_SUCCESS;
 	}
 
-	/* put the clientid on front of the topic */
-	/* calculate the length of the new payload */
-	new_sub_len = strlen(clientid) + sizeof('/') + strlen(ed->data.topic_filter) + 1;
+/* put the clientid on front of the topic */
+/* calculate the length of the new payload */
+	new_sub_len = strlen(clientid) + SLASH_Z + strlen(ed->data.topic_filter) + 1;
 
 	/* Allocate some memory - use
 	 * mosquitto_calloc/mosquitto_malloc/mosquitto_strdup when allocating, to
 	 * allow the broker to track memory usage */
 	new_sub = mosquitto_calloc(1, new_sub_len);
-	if(new_sub == NULL){
+	if (new_sub == NULL)
+	{
 		return MOSQ_ERR_NOMEM;
 	}
 
-	/* prepend the clientid to the subscription */
+/* prepend the clientid to the subscription */
 	snprintf(new_sub, new_sub_len, "%s/%s", clientid, ed->data.topic_filter);
 
 	/* Assign the new topic to the event data structure. You
@@ -254,35 +288,37 @@ static int callback_subscribe(int event, void *event_data, void *userdata)
 	return MOSQ_ERR_SUCCESS;
 }
 
-static int callback_unsubscribe(int event, void *event_data, void *userdata)
+static int callback_unsubscribe(int event, void* event_data, void* userdata)
 {
-	struct mosquitto_evt_unsubscribe *ed = event_data;
-	char *new_sub;
+	struct mosquitto_evt_unsubscribe* ed = event_data;
+	char* new_sub;
 	size_t new_sub_len;
 
 	UNUSED(event);
 	UNUSED(userdata);
 
-	const char *clientid = mosquitto_client_id(ed->client);
+	const char* clientid = mosquitto_client_id(ed->client);
 
-	if(!is_jailed(clientid)){
-		/* will only modify the topic of jailed clients */
+	if (!is_jailed(clientid))
+	{
+	/* will only modify the topic of jailed clients */
 		return MOSQ_ERR_SUCCESS;
 	}
 
-	/* put the clientid on front of the topic */
-	/* calculate the length of the new payload */
-	new_sub_len = strlen(clientid) + sizeof('/') + strlen(ed->data.topic_filter) + 1;
+/* put the clientid on front of the topic */
+/* calculate the length of the new payload */
+	new_sub_len = strlen(clientid) + SLASH_Z + strlen(ed->data.topic_filter) + 1;
 
 	/* Allocate some memory - use
 	 * mosquitto_calloc/mosquitto_malloc/mosquitto_strdup when allocating, to
 	 * allow the broker to track memory usage */
 	new_sub = mosquitto_calloc(1, new_sub_len);
-	if(new_sub == NULL){
+	if (new_sub == NULL)
+	{
 		return MOSQ_ERR_NOMEM;
 	}
 
-	/* prepend the clientid to the subscription */
+/* prepend the clientid to the subscription */
 	snprintf(new_sub, new_sub_len, "%s/%s", clientid, ed->data.topic_filter);
 
 	/* Assign the new topic to the event data structure. You
@@ -293,8 +329,7 @@ static int callback_unsubscribe(int event, void *event_data, void *userdata)
 	return MOSQ_ERR_SUCCESS;
 }
 
-
-int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void **user_data, struct mosquitto_opt *opts, int opt_count)
+int mosquitto_plugin_init(mosquitto_plugin_id_t* identifier, void** user_data, struct mosquitto_opt* opts, int opt_count)
 {
 	UNUSED(user_data);
 	UNUSED(opts);
@@ -306,14 +341,18 @@ int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void **user_data, s
 	int rc;
 
 	rc = mosquitto_callback_register(mosq_pid, MOSQ_EVT_ACL_CHECK, callback_acl_check, NULL, NULL);
-	if(rc) return rc;
+	if (rc)
+		return rc;
 	rc = mosquitto_callback_register(mosq_pid, MOSQ_EVT_MESSAGE_IN, callback_message_in, NULL, NULL);
-	if(rc) return rc;
+	if (rc)
+		return rc;
 	rc = mosquitto_callback_register(mosq_pid, MOSQ_EVT_MESSAGE_OUT, callback_message_out, NULL, NULL);
-	if(rc) return rc;
+	if (rc)
+		return rc;
 	rc = mosquitto_callback_register(mosq_pid, MOSQ_EVT_SUBSCRIBE, callback_subscribe, NULL, NULL);
-	if(rc) return rc;
+	if (rc)
+		return rc;
 	rc = mosquitto_callback_register(mosq_pid, MOSQ_EVT_UNSUBSCRIBE, callback_unsubscribe, NULL, NULL);
 	return rc;
 }
-#pragma GCC pop_options
+// #pragma GCC pop_options
