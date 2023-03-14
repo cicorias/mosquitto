@@ -59,9 +59,84 @@ Contributors:
 
 #define UNUSED(A) (void)(A)
 
+#define SLASH_Z sizeof((char)'/')
+
 MOSQUITTO_PLUGIN_DECLARE_VERSION(5);
 
 static mosquitto_plugin_id_t *mosq_pid = NULL;
+
+// #pragma GCC push_options
+// #pragma GCC optimize("O0")
+static bool is_jailed(const char *str)
+{
+	return !(strncmp("admin", str, 5) == 0);
+}
+
+static int callback_acl_check(int event, void *event_data, void *userdata)
+{
+	struct mosquitto_evt_acl_check *ed = event_data;
+
+	UNUSED(event);
+	UNUSED(userdata);
+
+	const char *clientid = mosquitto_client_id(ed->client);
+
+	if(!is_jailed(clientid)){
+		/* will only modify the topic of jailed clients */
+		return MOSQ_ERR_SUCCESS;
+	}
+
+	char* putTopic = "$dps/registrations/PUT/iotdps-register/";
+	char* getTopic = "$dps/registrations/GET/iotdps-get-operationstatus/";
+	char* subTopic = "$dps/registrations/res/#";
+	size_t putLen = strlen(putTopic) - 1;
+	size_t getLen = strlen(getTopic) - 1;
+	size_t subLen = strlen(subTopic) - 1;
+
+	char *new_topic;
+	size_t new_topic_len;
+
+	// NOTE: during subscribe its the raw topic
+	if(ed->access == MOSQ_ACL_SUBSCRIBE){
+		if(strncmp(ed->topic, subTopic, subLen) == 0){
+			return MOSQ_ERR_SUCCESS;
+		}
+	}
+
+	// NOTE: during a inbond message with the prefix - it has the prefix
+	// NOTE: this is the subscribe topic
+	if(ed->access == MOSQ_ACL_READ){
+		// TODO: check size_t 
+		int z,y,x;
+		z = strlen(clientid);
+		y = SLASH_Z;
+		x = subLen;
+		new_topic_len = strlen(clientid) + SLASH_Z + subLen + 1;
+		new_topic = mosquitto_calloc(1, new_topic_len);
+		if(!new_topic){
+			return MOSQ_ERR_NOMEM;
+		}
+		snprintf(new_topic, new_topic_len, "%s/%s", clientid, subTopic);
+		
+		if(strncmp(ed->topic, new_topic, new_topic_len - 1) == 0){
+			return MOSQ_ERR_SUCCESS;
+		}
+	}
+
+	if(ed->access == MOSQ_ACL_WRITE){
+		if(strncmp(ed->topic, putTopic, putLen) == 0){
+			return MOSQ_ERR_SUCCESS;
+		}
+
+		if(strncmp(ed->topic, getTopic, getLen) == 0){
+			return MOSQ_ERR_SUCCESS;
+		}
+	}
+
+	return MOSQ_ERR_ACL_DENIED;
+}
+
+
 
 static int callback_message_in(int event, void *event_data, void *userdata)
 {
@@ -73,10 +148,8 @@ static int callback_message_in(int event, void *event_data, void *userdata)
 	UNUSED(userdata);
 
 	const char *clientid = mosquitto_client_id(ed->client);
-
-	/* put the clientid on front of the topic */
-	/* calculate the length of the new payload */
-	new_topic_len = strlen(clientid) + sizeof('/') + strlen(ed->topic) + 1;
+	mosquitto_log_printf(MOSQ_LOG_ERR, "entering message_in.");
+		new_topic_len = strlen(clientid) + sizeof('/') + strlen(ed->topic) + 1;
 
 	/* Allocate some memory - use
 	 * mosquitto_calloc/mosquitto_malloc/mosquitto_strdup when allocating, to
@@ -106,6 +179,11 @@ static int callback_message_out(int event, void *event_data, void *userdata)
 	UNUSED(userdata);
 
 	const char *clientid = mosquitto_client_id(ed->client);
+
+	if(!is_jailed(clientid)){
+		/* will only modify the topic of jailed clients */
+		return MOSQ_ERR_SUCCESS;
+	}
 
 	/* remove the clientid from the front of the topic */
 	clientid_len = strlen(clientid);
@@ -148,6 +226,11 @@ static int callback_subscribe(int event, void *event_data, void *userdata)
 
 	const char *clientid = mosquitto_client_id(ed->client);
 
+	if(!is_jailed(clientid)){
+		/* will only modify the topic of jailed clients */
+		return MOSQ_ERR_SUCCESS;
+	}
+
 	/* put the clientid on front of the topic */
 	/* calculate the length of the new payload */
 	new_sub_len = strlen(clientid) + sizeof('/') + strlen(ed->data.topic_filter) + 1;
@@ -181,6 +264,11 @@ static int callback_unsubscribe(int event, void *event_data, void *userdata)
 	UNUSED(userdata);
 
 	const char *clientid = mosquitto_client_id(ed->client);
+
+	if(!is_jailed(clientid)){
+		/* will only modify the topic of jailed clients */
+		return MOSQ_ERR_SUCCESS;
+	}
 
 	/* put the clientid on front of the topic */
 	/* calculate the length of the new payload */
@@ -217,6 +305,8 @@ int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void **user_data, s
 
 	int rc;
 
+	rc = mosquitto_callback_register(mosq_pid, MOSQ_EVT_ACL_CHECK, callback_acl_check, NULL, NULL);
+	if(rc) return rc;
 	rc = mosquitto_callback_register(mosq_pid, MOSQ_EVT_MESSAGE_IN, callback_message_in, NULL, NULL);
 	if(rc) return rc;
 	rc = mosquitto_callback_register(mosq_pid, MOSQ_EVT_MESSAGE_OUT, callback_message_out, NULL, NULL);
@@ -226,3 +316,4 @@ int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void **user_data, s
 	rc = mosquitto_callback_register(mosq_pid, MOSQ_EVT_UNSUBSCRIBE, callback_unsubscribe, NULL, NULL);
 	return rc;
 }
+#pragma GCC pop_options
