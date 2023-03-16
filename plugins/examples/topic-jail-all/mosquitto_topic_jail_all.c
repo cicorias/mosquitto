@@ -54,6 +54,8 @@ Contributors:
 #include "mosquitto.h"
 #include "mqtt_protocol.h"
 
+#include <openssl/ssl.h>
+
 #define PLUGIN_NAME "topic-jail-all"
 #define PLUGIN_VERSION "1.0"
 
@@ -82,9 +84,47 @@ static int callback_message_in(int event, void* event_data, void* userdata)
 	UNUSED(event);
 	UNUSED(userdata);
 
-	const char *clientid = mosquitto_client_id(ed->client);
+	const char* clientid = mosquitto_client_id(ed->client);
 
-	if(!is_jailed(clientid)){
+	X509 *client_cert = NULL;
+	//mosquitto_client* 
+
+
+	struct mosquitto* client = mosquitto_client(clientid);
+	client_cert = mosquitto_client_certificate(client);
+
+    if (client_cert) {
+
+		X509_NAME *issuer_name = X509_get_issuer_name(client_cert);
+		if (issuer_name) {
+            // Print the issuer name in human-readable form
+            printf("Issuer name:\n");
+            X509_NAME_print_ex_fp(stdout, issuer_name, 0, XN_FLAG_RFC2253);
+
+            // Alternatively, you can print the issuer name in one line format
+            char buf[256];
+            X509_NAME_oneline(issuer_name, buf, sizeof(buf));
+            printf("Issuer name: %s\n", buf);
+        } else {
+            printf("No issuer name found\n");
+        }
+
+        // Print the certificate information
+        printf("Client certificate:\n");
+        X509_print_fp(stdout, client_cert);
+
+        // Clean up the certificate
+        X509_free(client_cert);
+    } else {
+        printf("No client certificate provided\n");
+    }
+
+
+	if (client_cert == NULL) {
+		return MOSQ_ERR_SUCCESS;
+	}
+
+	if (!is_jailed(clientid)) {
 		/* will only modify the topic of jailed clients */
 		return MOSQ_ERR_SUCCESS;
 	}
@@ -98,7 +138,7 @@ static int callback_message_in(int event, void* event_data, void* userdata)
 	 * mosquitto_calloc/mosquitto_malloc/mosquitto_strdup when allocating, to
 	 * allow the broker to track memory usage */
 	new_topic = mosquitto_calloc(1, new_topic_len);
-	if(new_topic == NULL){
+	if (new_topic == NULL) {
 		return MOSQ_ERR_NOMEM;
 	}
 

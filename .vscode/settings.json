@@ -1,0 +1,18 @@
+{
+    "C_Cpp.formatting": "vcFormat",
+    "C_Cpp.vcFormat.indent.braces": false,
+    "C_Cpp.vcFormat.indent.caseContentsWhenBlock": true,
+    "C_Cpp.vcFormat.indent.caseLabels": true,
+    "C_Cpp.vcFormat.indent.preserveComments": false,
+    "files.associations": {
+        "tls_mosq.h": "c"
+    },
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.configureArgs": [
+        "-DCMAKE_TOOLCHAIN_FILE=/home/cicorias/g/cse/gm2/labs/mosquitto-plugin/vcpkg/scripts/buildsystems/vcpkg.cmake"
+    ],
+    "cmake.debugConfig": {
+        "args": ["-c", "test.conf", "-v"],
+        "cwd" : "${workspaceFolder}/plugins/examples/topic-jail-all",
+    }
+}
