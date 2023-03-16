@@ -86,38 +86,98 @@ static int callback_message_in(int event, void* event_data, void* userdata)
 
 	const char* clientid = mosquitto_client_id(ed->client);
 
-	X509 *client_cert = NULL;
+	X509* client_cert = NULL;
 	//mosquitto_client* 
 
 
 	struct mosquitto* client = mosquitto_client(clientid);
 	client_cert = mosquitto_client_certificate(client);
 
-    if (client_cert) {
+	if (client_cert) {
 
-		X509_NAME *issuer_name = X509_get_issuer_name(client_cert);
-		if (issuer_name) {
-            // Print the issuer name in human-readable form
-            printf("Issuer name:\n");
-            X509_NAME_print_ex_fp(stdout, issuer_name, 0, XN_FLAG_RFC2253);
+		X509_NAME* subject_name = X509_get_subject_name(client_cert);
 
-            // Alternatively, you can print the issuer name in one line format
+		if (subject_name) {
+
+            printf("Subject name:\n");
+            X509_NAME_print_ex_fp(stdout, subject_name, 0, XN_FLAG_RFC2253);
+
+            // Alternatively, you can print the subject name in one line format
             char buf[256];
-            X509_NAME_oneline(issuer_name, buf, sizeof(buf));
-            printf("Issuer name: %s\n", buf);
-        } else {
-            printf("No issuer name found\n");
-        }
+            X509_NAME_oneline(subject_name, buf, sizeof(buf));
+            printf("Subject name: %s\n", buf);
 
-        // Print the certificate information
-        printf("Client certificate:\n");
-        X509_print_fp(stdout, client_cert);
+			// Find the position of the Common Name (CN) field
+			int cn_index = X509_NAME_get_index_by_NID(subject_name, NID_commonName, -1);
 
-        // Clean up the certificate
-        X509_free(client_cert);
-    } else {
-        printf("No client certificate provided\n");
-    }
+			if (cn_index >= 0) {
+				// Get the CN entry and its value
+				X509_NAME_ENTRY* cn_entry = X509_NAME_get_entry(subject_name, cn_index);
+				ASN1_STRING* cn_asn1 = X509_NAME_ENTRY_get_data(cn_entry);
+				unsigned char* cn_str = NULL;
+
+				// Convert the ASN1_STRING to UTF-8
+				ASN1_STRING_to_UTF8(&cn_str, cn_asn1);
+
+				// Print the Common Name (CN)
+				printf("Common Name: %s\n", cn_str);
+
+				// Free the memory
+				OPENSSL_free(cn_str);
+			}
+			else {
+				printf("No Common Name (CN) found\n");
+			}
+		}
+		else {
+			printf("No subject name found\n");
+		}
+
+
+		X509_NAME* issuer_name = X509_get_issuer_name(client_cert);
+		if (issuer_name) {
+			// Print the issuer name in human-readable form
+			printf("Issuer name:\n");
+			X509_NAME_print_ex_fp(stdout, issuer_name, 0, XN_FLAG_RFC2253);
+
+			// Alternatively, you can print the issuer name in one line format
+			char buf[256];
+			X509_NAME_oneline(issuer_name, buf, sizeof(buf));
+			printf("Issuer name: %s\n", buf);
+		}
+		else {
+			printf("No issuer name found\n");
+		}
+
+		// Get the serial number
+		ASN1_INTEGER* serial = X509_get_serialNumber(client_cert);
+
+		if (serial) {
+			// Convert the serial number to a human-readable string
+			BIGNUM* bn = ASN1_INTEGER_to_BN(serial, NULL);
+			char* serial_str = BN_bn2hex(bn);
+
+			// Print the serial number
+			printf("Serial number: %s\n", serial_str);
+
+			// Free memory
+			BN_free(bn);
+			OPENSSL_free(serial_str);
+		}
+		else {
+			printf("No serial number found\n");
+		}
+
+		// Print the certificate information
+		printf("Client certificate:\n");
+		X509_print_fp(stdout, client_cert);
+
+		// Clean up the certificate
+		X509_free(client_cert);
+	}
+	else {
+		printf("No client certificate provided\n");
+	}
 
 
 	if (client_cert == NULL) {
